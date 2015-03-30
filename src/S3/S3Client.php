@@ -302,11 +302,11 @@ class S3Client extends AwsClient
     ) {
         // Apply default options.
         $options += [
-            'before_upload' => null,
-            'concurrency'   => 1,
-            'params'        => [],
-            'part_size'     => null,
-            'threshold'     => 16777216 // 16 MB
+            'before_part' => null,
+            'concurrency' => 3,
+            'params'      => [],
+            'part_size'   => null,
+            'threshold'   => 16777216 // 16 MB
         ];
 
         // Perform the needed operations to upload the S3 Object.
@@ -321,15 +321,14 @@ class S3Client extends AwsClient
             ] + $params));
         }
 
-        return (new UploadBuilder)
-            ->setClient($this)
-            ->setSource($body)
-            ->setBucket($bucket)
-            ->setKey($key)
-            ->addParams('initiate', $params)
-            ->setPartSize($options['part_size'])
-            ->build()
-            ->upload($options['concurrency'], $options['before_upload']);
+        return (new MultipartUploader($this, $body, [
+            'bucket'      => $bucket,
+            'key'         => $key,
+            'initiate'    => $params,
+            'part_size'   => $options['part_size'],
+            'concurrency' => $options['concurrency'],
+            'before_part' => $options['before_part'],
+        ]))->upload();
     }
 
     /**

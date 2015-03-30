@@ -24,7 +24,7 @@ class MultipartUploadException extends \RuntimeException
             $message = sprintf(self::MSG_TEMPLATE, 'uploading parts to');
             $message .= " The following parts had errors:\n";
             foreach ($action as $part => $error) {
-                $message .= "- Part {$part}: {$error}\n";
+                $message .= "- Part {$part}: {$error->getMessage()}\n";
             }
         } else {
             $message = sprintf(self::MSG_TEMPLATE, $action);
