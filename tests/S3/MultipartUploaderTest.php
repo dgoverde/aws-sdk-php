@@ -2,19 +2,52 @@
 namespace Aws\Test\S3;
 
 use Aws\Multipart\UploadState;
-use Aws\S3\UploadBuilder;
+use Aws\S3\MultipartUploader;
 use Aws\Result;
 use Aws\Test\UsesServiceTrait;
 use GuzzleHttp\Psr7;
 
 /**
- * @covers Aws\S3\UploadBuilder
+ * @covers Aws\S3\MultipartUploader
  */
-class UploadBuilderTest extends \PHPUnit_Framework_TestCase
+class MultipartUploaderTest extends \PHPUnit_Framework_TestCase
 {
     use UsesServiceTrait;
 
     const MB = 1048576;
+
+    public function testStuff()
+    {
+        $client = $this->getTestClient('s3');
+        $url = 'http://foo.s3.amazonaws.com/bar';
+        $this->addMockResults($client, [
+            new Result(['UploadId' => 'baz']),
+            new Result(['ETag' => 'A']),
+            new Result(['ETag' => 'B']),
+            new Result(['ETag' => 'C']),
+            new Result(['Location' => $url])
+        ]);
+
+        $stream = Psr7\stream_for(str_repeat('.', 12 * self::MB));
+        $uploader = new MultipartUploader($client, $stream, [
+            'bucket' => 'foo',
+            'key'    => 'bar',
+        ]);
+        $result = $uploader->upload();
+
+        $this->assertTrue($uploader->getState()->isCompleted());
+        $this->assertEquals($url, $result['ObjectURL']);
+    }
+
+    public function testThrowsExceptionOnBadPartSize()
+    {
+        $this->setExpectedException('InvalidArgumentException');
+        $this->getUploader(Psr7\stream_for(), [
+            'part_size' => 1
+        ]);
+    }
+}
+__halt_compiler();
 
     public function testCanCreateBuilder()
     {

@@ -140,11 +140,9 @@ class MultipartUploader extends AbstractUploader
 
     protected function getCompleteParams()
     {
-        return [
-            'MultipartUpload' => [
-                'Parts' => $this->state->getUploadedParts()
-            ]
-        ];
+        return ['MultipartUpload' => [
+            'Parts' => $this->state->getUploadedParts()
+        ]];
     }
 
     /**

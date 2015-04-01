@@ -24,17 +24,7 @@ abstract class AbstractUploader
     protected $client;
 
     /** @var array Configuration used to perform the upload. */
-    protected $config = [
-        'part_size'   => null,
-        'upload_id'   => null,
-        'state'       => null,
-        'concurrency' => 3,
-        'before_part' => null,
-        'initiate'    => [],
-        'upload'      => [],
-        'complete'    => [],
-        'abort'       => [],
-    ];
+    protected $config;
 
     /** @var array Service-specific information about the upload workflow. */
     protected $info = [];
@@ -58,7 +48,17 @@ abstract class AbstractUploader
     public function __construct(Client $client, $source, array $config = [])
     {
         $this->loadUploadWorkflowInfo();
-        $this->config += $config + $this->info['defaults'];
+        $this->config = $config + $this->info['defaults'] + [
+            'part_size'   => null,
+            'upload_id'   => null,
+            'state'       => null,
+            'concurrency' => 3,
+            'before_part' => null,
+            'initiate'    => [],
+            'upload'      => [],
+            'complete'    => [],
+            'abort'       => [],
+        ];
         $this->client = $client;
         $this->prepareSource($source);
         $this->prepareState();
@@ -174,7 +174,11 @@ abstract class AbstractUploader
      */
     public function abortAsync()
     {
-        return Promise\coroutine(function () {
+        if ($this->promise) {
+            return $this->promise;
+        }
+
+        return $this->promise = Promise\coroutine(function () {
             if ($this->state instanceof Promise\PromiseInterface) {
                 $this->state = (yield $this->state);
             }
@@ -187,6 +191,12 @@ abstract class AbstractUploader
                     . 'been completed or aborted, or has not been initiated.'
                 );
             }
+        })->then(null, function (\Exception $e) {
+            // Throw errors from the operations as a specific Multipart error.
+            if ($e instanceof AwsException) {
+                $e = new MultipartUploadException($this->state, $e);
+            }
+            throw $e;
         });
     }
 
@@ -380,7 +390,7 @@ abstract class AbstractUploader
                         $this->handleResult($command, $result);
                         return $result;
                     },
-                    function (AwsException $e) {
+                    function (AwsException $e) use (&$errors) {
                         $errors[$e->getCommand()[$this->info['part']['param']]] = $e;
                     }
                 );
@@ -405,13 +415,7 @@ abstract class AbstractUploader
         $seekable = $this->source->isSeekable()
             && $this->source->getMetadata('wrapper_type') === 'plainfile';
 
-        for (
-            $partNumber = 1;
-            $seekable
-                ? $this->source->tell() < $this->source->getSize()
-                : !$this->source->eof();
-            $partNumber++
-        ) {
+        for ($partNumber = 1; $this->isEof($seekable); $partNumber++) {
             // If we haven't already uploaded this part, yield a new part.
             if (!$this->state->hasPartBeenUploaded($partNumber)) {
                 $partStartPos = $this->source->tell();
@@ -433,5 +437,19 @@ abstract class AbstractUploader
                 $this->source->read($this->state->getPartSize());
             }
         }
+    }
+
+    /**
+     * Checks if the source is at EOF.
+     *
+     * @param bool $seekable
+     *
+     * @return bool
+     */
+    private function isEof($seekable)
+    {
+        return $seekable
+            ? $this->source->tell() < $this->source->getSize()
+            : !$this->source->eof();
     }
 }
